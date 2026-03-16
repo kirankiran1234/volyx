@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-set -e
+#!/bin/bash
 
 clear
 echo "======================================"
@@ -7,63 +6,69 @@ echo "        VOLYX CONVOY INSTALLER"
 echo "         https://volyx.host"
 echo "======================================"
 
-if [[ $EUID -ne 0 ]]; then
-  echo "❌ Please run as root"
-  exit 1
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run as root"
+  exit
 fi
 
-read -rp "Enter your panel domain (example: panel.domain.com): " DOMAIN
+read -p "Enter your panel domain (example: panel.domain.com): " DOMAIN
 
-echo "➡️ Installing dependencies..."
+echo "Updating system..."
 apt update -y
-apt install -y curl wget git unzip ca-certificates
+apt install -y curl wget git unzip
 
-echo "➡️ Installing Docker..."
+echo "Installing Docker..."
 curl -fsSL https://get.docker.com | sh
 
-echo "➡️ Ensuring docker compose plugin..."
-apt install -y docker-compose-plugin || true
+echo "Installing docker compose..."
+apt install docker-compose-plugin -y
 
-echo "➡️ Preparing directory..."
+echo "Creating panel directory..."
 mkdir -p /var/www/convoy
 cd /var/www/convoy
 
-echo "➡️ Cleaning old files (if any)..."
-rm -rf /var/www/convoy/*
+echo "Cleaning old files..."
+rm -rf *
 
-echo "➡️ Cloning Convoy panel..."
+echo "Cloning Convoy..."
 git clone https://github.com/convoypanel/panel.git .
 
-echo "➡️ Setting permissions..."
-chmod -R o+w storage bootstrap/cache || true
+echo "Fixing Dockerfile dependency issue..."
 
-echo "➡️ Creating environment file..."
+sed -i 's/gnupg/gnupg2/g' docker/workspace/Dockerfile
+sed -i 's/software-properties-common//g' docker/workspace/Dockerfile
+
+echo "Setting permissions..."
+chmod -R 777 storage bootstrap/cache || true
+
+echo "Creating environment file..."
 cp .env.example .env
 
 sed -i "s|APP_URL=.*|APP_URL=http://$DOMAIN|g" .env
 
-echo "➡️ Starting Docker containers..."
-docker compose up -d
+echo "Starting Docker containers..."
+docker compose up -d --build
 
-echo "⏳ Waiting for containers to boot..."
-sleep 15
+echo "Waiting for containers..."
+sleep 25
 
-echo "➡️ Installing PHP dependencies..."
+echo "Installing dependencies..."
 docker compose exec workspace composer install --no-dev --optimize-autoloader
 
-echo "➡️ Generating app key..."
+echo "Generating application key..."
 docker compose exec workspace php artisan key:generate --force
 
-echo "➡️ Running database migrations..."
+echo "Running database migration..."
 docker compose exec workspace php artisan migrate --force
 
-echo "➡️ Optimizing panel..."
+echo "Optimizing..."
 docker compose exec workspace php artisan optimize
 
-echo "======================================"
-echo "✅ Convoy installed successfully!"
-echo "🌐 Open: http://$DOMAIN"
 echo ""
-echo "➡️ Create admin user now:"
+echo "======================================"
+echo " Convoy Panel Installed Successfully!"
+echo " Open: http://$DOMAIN"
+echo ""
+echo "Create admin user:"
 echo "docker compose exec workspace php artisan c:user:make"
 echo "======================================"
